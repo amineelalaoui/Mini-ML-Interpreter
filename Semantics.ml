@@ -190,8 +190,14 @@ and
 (* ruleCallByName : environment -> ast -> ast -> valueType *)
 (* Fonction d'évaluation d'un appel de fonction avec passage de paramètre par nom*)
 ruleCallByName env fexpr pexpr = 
-(* A traiter*)
-     (ErrorValue UndefinedExpressionError)
+      match (value_of_expr fexpr env) with
+      | (FrozenValue (fexpr,fenv)) ->
+        (match fexpr with
+        | (FunctionNode (fpar,fbody)) ->
+          (value_of_expr fbody ((fpar,(FrozenValue (pexpr,env)))::fenv))
+        | _ -> (ErrorValue TypeMismatchError))
+      | (ErrorValue _) as result -> result
+      | _ -> (ErrorValue TypeMismatchError)
 (* ========================================================*)
 and
 (* ruleCallByValue : environment -> ast -> ast -> valueType *)
@@ -199,7 +205,21 @@ and
 ruleCallByValue env fexpr pexpr = 
 (* Appel par valeur *)
 (* A traiter*)
-     (ErrorValue UndefinedExpressionError)
+  let pval = 
+    value_of_expr pexpr env
+  in
+    match pval with
+    | (ErrorValue _) as result -> result
+    | _ -> 
+  let fval = 
+        value_of_expr fexpr env
+      in 
+        (match fval with
+        | (FrozenValue ((FunctionNode (fpar,fbody)),fenv)) ->
+            (value_of_expr fbody ((fpar,pval)::fenv))
+        | (ErrorValue _) as result -> result
+        | _ -> (ErrorValue TypeMismatchError)
+        )
 (* ========================================================*)
 and
 (* ruleLetrec : environment -> string -> ast- > ast -> valueType *)
