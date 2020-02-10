@@ -172,8 +172,11 @@ and
 (* Fonction d'évaluation d'une conditionnelle *)
 (* "if cond then bthen else belse" *)
 ruleIf env cond bthen belse = 
-(* A traiter*)
-     (ErrorValue UndefinedExpressionError)
+    match (value_of_expr cond env) with
+    |(BooleanValue cond) -> if cond then (value_of_expr bthen env)
+                            else (value_of_expr belse env)
+    |_ -> (ErrorValue TypeMismatchError)
+    
 (* ========================================================*)
 and 
 (* ruleFunction : ast -> environment -> valueType *)
