@@ -107,7 +107,7 @@ ruleLet env ident bvalue bin =
    in
    (match value with
     | (ErrorValue _) as result -> result
-    | _ -> (value_of_expr bin env))
+    | _ -> (value_of_expr bin ((ident , value)::env)))
   )
 (* ========================================================*)
 and 
