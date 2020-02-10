@@ -182,8 +182,7 @@ and
 (* ruleFunction : ast -> environment -> valueType *)
 (* Fonction d'évaluation d'une fonction *)
 ruleFunction expr env = 
-(* A traiter*)
-     (ErrorValue UndefinedExpressionError)
+    (FrozenValue (expr,env))
 
 (* Appel par nom *)
 (* ========================================================*)
