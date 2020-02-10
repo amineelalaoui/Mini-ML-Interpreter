@@ -1,5 +1,4 @@
 (* Analyseur sémantique *)
-
 open Ast
 
 (* ========================================================*)
@@ -96,7 +95,7 @@ ruleName env name =
   | (Found value) -> match value with
                     | (IntegerValue value) -> (IntegerValue value)
                     | (BooleanValue value) -> (BooleanValue value)
-                    | _ -> (ErrorValue (TypeMismatchError))
+                    | _ -> (ErrorValue (TypeMismatchError)) 
 
 (* ========================================================*)
 and 
@@ -104,8 +103,12 @@ and
 (* Fonction d'évaluation d'un let *)
 (* "let ident = bvalue in bin" *)
 ruleLet env ident bvalue bin = 
-(* A traiter*)
-     (ErrorValue UndefinedExpressionError)
+  (let value = (value_of_expr bvalue env) 
+   in
+   (match value with
+    | (ErrorValue _) as result -> result
+    | _ -> (value_of_expr bin env))
+  )
 (* ========================================================*)
 and 
 (* ruleBinary : environment -> binary -> ast- > ast -> valueType *)
