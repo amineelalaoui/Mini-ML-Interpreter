@@ -94,9 +94,9 @@ ruleName env name =
   | NotFound -> (ErrorValue (UnknownIdentError name))
 (* Si la valeur a été trouvé dans l'environnement, on retourne le type*)
   | (Found value) -> match value with
-                    | (IntegerValue value) -> IntegerValue
-                    | (BooleanValue value) -> BooleanValue
-                    | _ -> (ErrorValue (TypeMismatchError name))
+                    | (IntegerValue value) -> (IntegerValue value)
+                    | (BooleanValue value) -> (BooleanValue value)
+                    | _ -> (ErrorValue (TypeMismatchError))
 
 (* ========================================================*)
 and 
