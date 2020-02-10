@@ -92,8 +92,11 @@ and
 ruleName env name = 
   match (lookfor name env) with
   | NotFound -> (ErrorValue (UnknownIdentError name))
-(* A completer*)
-  | (Found value) -> value
+(* Si la valeur a été trouvé dans l'environnement, on retourne le type*)
+  | (Found value) -> match value with
+                    | (IntegerValue value) -> IntegerValue
+                    | (BooleanValue value) -> BooleanValue
+                    | _ -> (ErrorValue (TypeMismatchError name))
 
 (* ========================================================*)
 and 

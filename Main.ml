@@ -1,7 +1,7 @@
 open Ast 
 open Lexer
 open Parser
-open Semantics
+open Semantics  
 open Lexing
 
 let report_error filename lexbuf msg =
