@@ -1,4 +1,3 @@
 #ignoring vscode settings
 settings.json
-make
 .vscode/*
