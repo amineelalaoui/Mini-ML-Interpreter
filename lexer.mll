@@ -38,6 +38,9 @@ rule token = parse
   | "if"      {IfToken}
   | "then"    {ThenToken}
   | "else"    {ElseToken}
+  | "while"   {WhileToken}
+  | "do"      {DoToken}
+  | "done"    {DoneToken}
   | "let"     {LetToken}
   | "in"      {InToken}
   | "letrec"  {RecToken}
