@@ -1,0 +1,1 @@
+let var = ref 100 in var
