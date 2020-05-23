@@ -12,12 +12,12 @@ type binary =
   | LesserEqual 
   | Greater 
   | GreaterEqual
-
+;;
 
 (*Type des opérateurs unaires *)
 type unary = 
   | Negate
-
+;;
 
 (*Type pour la construction de l'arbre abstrait (Abstract Syntaxic Tree) *)
 type ast =
@@ -31,13 +31,14 @@ type ast =
   | WriteNode of ast * ast
   | SequenceNode of ast * ast
   | AccessNode of string
+  | WhileNode of ast * ast
   | IntegerNode of int
   | BinaryNode of binary * ast * ast
   | UnaryNode of unary * ast
   | TrueNode
   | FalseNode
   | UnitNode
-
+;;
 
 (* string_of_ast : ast -> string *)
 (* Convertit un ast en une chaine de caractères en vue de son affichage *)
@@ -59,6 +60,8 @@ let rec string_of_ast tree =
 	("(" ^ (string_of_ast id) ^ " := " ^ (string_of_ast exp) ^ ")")
     | (SequenceNode (exp,exp2)) -> ("( " ^ (string_of_ast exp) ^ "; " ^ (string_of_ast exp2) ^ ")")
     | (AccessNode name) -> name
+    | (WhileNode (cond,body)) -> 
+	("(while " ^ (string_of_ast cond) ^ " do " ^ (string_of_ast body) ^ " done)")
     | (IntegerNode value) -> (string_of_int value) 
     | (BinaryNode (op,left,right)) -> 
 	( "(" ^ (string_of_ast left) ^
@@ -84,5 +87,5 @@ let rec string_of_ast tree =
     | TrueNode  -> ( "true")
     | FalseNode  -> ( "false")
     | UnitNode  -> ( "()")
-    
+;;    
 
