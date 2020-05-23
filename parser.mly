@@ -10,6 +10,9 @@ open Ast
 %token IfToken
 %token ThenToken
 %token ElseToken
+%token WhileToken
+%token DoToken
+%token DoneToken
 %token LetToken
 %token InToken
 %token TrueToken
@@ -86,6 +89,7 @@ expr :
 | LetToken n = IdentToken EqualToken e1 = expr InToken e2 = expr     {LetNode (n,e1,e2)}
 | RecToken n = IdentToken EqualToken e1 = expr InToken e2 = expr     {LetrecNode (n,e1,e2)}
 | IfToken c= expr ThenToken t = expr ElseToken e = expr              {IfthenelseNode (c,t,e)}
+| WhileToken c= expr DoToken b = expr DoneToken	   		     {WhileNode(c,b)}
 | e = expr SequenceToken p = expr                                    {SequenceNode(e,p)}
 | LeftParenthesisToken f = expr RightParenthesisToken  p =expr       {CallNode (f,p)}
 | LeftParenthesisToken e = expr RightParenthesisToken                {e}
