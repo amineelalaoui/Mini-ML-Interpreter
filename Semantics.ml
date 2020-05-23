@@ -1,30 +1,37 @@
 (* Analyseur sémantique *)
 open Ast
 
-(* ========================================================*)
+(* ===============================================*)
 (* Définition du type des erreurs *)
 type errorType =
   | UnknownIdentError of string
+  | UnknownReferenceError of string
   | TypeMismatchError
   | RuntimeError
   | UndefinedExpressionError
+;;
 
-
-(* ========================================================*)
+(* ===============================================*)
 (* Définition du type des valeurs renvoyées par l'interprète *)
 type valueType =
   | FrozenValue of (ast * environment)
   | IntegerValue of int
   | BooleanValue of bool
+  | ReferenceValue of string
+  | NullValue
   | ErrorValue of errorType
-and environment = (string * valueType) list
+and 
+  environment = (string * valueType) list
+and 
+  memory = (string * valueType) list
+;;
 
-
-(* ========================================================*)
+(* ===============================================*)
 (* string_of_names : string list -> string *)
 (* Converti une liste de chaînes de caractères en une seule chaîne de caractères *)
 let string_of_names names =
-	List.fold_right (fun t tq -> t ^ " " ^ tq ) names ""
+	List.fold_right (fun t tq -> t ^ " " ^ tq ) names "";;
+
 
 (* string_of_env : environment -> string *)
 (* Convertit un environnement en une chaine de caractères en vue de son affichage *)
@@ -32,217 +39,369 @@ let rec string_of_env env =
   match env with
   | [] -> ""
   | (key,value)::q -> (key ^ "," ^ (string_of_value value)) ^ ";" ^ (string_of_env q)
+(* string_of_mem : memory -> string *)
+(* Convertit une mémoire en une chaine de caractères en vue de son affichage *)
+and string_of_mem mem =
+  match mem with
+  | [] -> ""
+  | (key,value)::q -> (key ^ "," ^ (string_of_value value)) ^ ";" ^ (string_of_mem q)
 (* string_of_value : valueType -> string *)
 (* Convertit une valueType en une chaine de caractères en vue de son affichage *)
 and string_of_value value =
   match value with
-  | (FrozenValue (expr,env)) -> ((string_of_ast expr) ^ (string_of_env env))
-  | (IntegerValue value) -> (string_of_int value)
-  | (BooleanValue value) -> (if (value) then "true" else "false")
-  | (ErrorValue error) -> (string_of_error error)
+    | (FrozenValue (expr,env)) -> ((string_of_ast expr) ^ (string_of_env env))
+    | (IntegerValue value) -> (string_of_int value)
+    | (BooleanValue value) -> (if (value) then "true" else "false")
+    | ReferenceValue value -> ("ref " ^ value) 
+    | NullValue -> "()"
+    | (ErrorValue error) -> (string_of_error error)
+(* string_of_value_and_mem : (valueType * memory) -> string *)
+(* Convertit une valueType en une chaine de caractères en vue de son affichage *)
+and string_of_value_and_mem vm =
+    ( "Valeur = " ^ (string_of_value (fst vm))
+      ^ "\nMemoire = " ^ string_of_mem (snd vm) ) 
 (* string_of_error : errorType -> string *)
 (* Convertit une erreur en une chaine de caractères en vue de son affichage *)
 and string_of_error error =
   match error with
-  | (UnknownIdentError name) -> "Unknown ident : " ^ name
-  | RuntimeError -> "Runtime error"
-  | TypeMismatchError -> "Type mismatch"
-  | UndefinedExpressionError -> "Undefined expression error"
+    | (UnknownIdentError name) -> "Unknown ident : " ^ name
+    | (UnknownReferenceError name) -> "Unknown ident : " ^ name
+    | RuntimeError -> "Runtime error"
+    | TypeMismatchError -> "Type mismatch"
+    | UndefinedExpressionError -> "Undefined Expression"
 
+;;
 
-(* ========================================================*)
+(* ===============================================*)
 type 'a searchResult = 
   | NotFound 
-  | Found of 'a
-
+  | Found of 'a;;
 
 (* lookfor : string -> environment -> valueType searchResult *)
-(* Cherche un identifiant dans un environnement et renvoie la valeur associée le cas échéant *)
-let rec lookfor name env =
+(* Cherche un identifiant dans un environnement et renvoie la valeur associée à cet identifiant ou une erreur le cas échéant *)
+let rec lookforEnv name env =
   match env with
-  | [] -> NotFound
-  | (key,value) :: others ->
-    (if (key = name) then (Found value) else (lookfor name others))
-  
+    | [] -> NotFound
+    | (key,value) :: others ->
+      (if (key = name) then (Found value) else (lookforEnv name others));;  
 
-(* ========================================================*)
-(* value_of_expr : ast -> environment -> valueType *)
-(* Fonction d'évaluation des expressions *)
-let rec value_of_expr expr env =
+(* lookfor : string -> memory -> valueType searchResult *)
+(* Cherche une adresse dans une mémoire et renvoie la valeur associée à cette adresse ou une erreur le cas échéant *)
+let rec lookforMem name env =
+  match env with
+    | [] -> NotFound
+    | (key,value) :: others ->
+      (if (key = name) then (Found value) else (lookforMem name others));;  
+
+(* ........................................................................*)
+(*   newReference : string                                                 *)
+(*     alloue une adresse dans la memoire de la forme "ref@i"              *)
+(* ........................................................................*)
+let referenceCounter = ref 0;;
+
+let newReference () =
+  (referenceCounter := (! referenceCounter) + 1);
+  ("ref@" ^ (string_of_int (! referenceCounter)));;
+
+(* .............................................................................*)
+(*   value_of_expr : (Ast.ast * memory) -> environment                          *)
+(*       -> (ValueType * memory)                                                *)
+(* Calcule la valeur d'une expression dans un environnement et une memoire      *)
+(* donnés. Le nouvel etat de la memoire est fourni en sortie avec la valeur.    *)
+(* Chaque expression est evaluée par une fonction ruleXXX differente codant     *)
+(* la ou les regles d'inference assoiciées                                      *)
+(* .............................................................................*)
+
+let rec value_of_expr (expr,mem) env =
   match expr with
-    | (FunctionNode (_,_)) -> ruleFunction expr env
-    | (CallNode (fexpr,pexpr)) -> ruleCallByValue env fexpr pexpr
-    (*| (CallNode (fexpr,pexpr)) -> ruleCallByName env fexpr pexpr *) 
-    | (IfthenelseNode (cond,bthen,belse)) -> ruleIf env cond bthen belse
-    | (LetNode (ident,bvalue,bin)) -> ruleLet env ident bvalue bin
-    | (LetrecNode (ident,bvalue,bin)) -> ruleLetrec env ident bvalue bin 
-    | (AccessNode name) -> ruleName env name
-    | (IntegerNode value) -> ruleInteger value
-    | (TrueNode) ->  ruleTrue 
-    | (FalseNode) ->  ruleFalse 
-    | (BinaryNode (op,left,right)) -> ruleBinary env op left right
-    | (UnaryNode (op,expr)) -> ruleUnary env op expr
-    | _ -> ErrorValue UndefinedExpressionError (* les expressions avec effets de bord *)
+    | (FunctionNode (_,_)) -> ruleFunction expr mem env
+    | (CallNode (fexpr,pexpr)) -> ruleCallByValue fexpr pexpr mem env    
+(*
+    | (CallNode (fexpr,pexpr)) -> ruleCallByName fexpr pexpr mem env 
+    *)
+    | (IfthenelseNode (cond,bthen,belse)) -> ruleIf cond bthen belse mem env 
+    | (LetNode (ident,bvalue,bin)) -> ruleLet ident bvalue bin mem env
+    | (LetrecNode (ident,bvalue,bin)) -> ruleLetrec ident bvalue bin  mem env
+    | (AccessNode ident) -> ruleAccess ident mem env
+    | (IntegerNode value) -> ruleInteger value mem
+    | (TrueNode) ->  ruleTrue mem 
+    | (FalseNode) ->  ruleFalse mem 
+    | (UnitNode) ->  ruleUnit mem 
+    | (BinaryNode (op,left,right)) -> ruleBinary op left right mem env 
+    | (UnaryNode (op,expr)) -> ruleUnary op expr mem env 
+    | (ReadNode expr) -> ruleRead expr mem env
+    | (WriteNode (refexpr,valexpr)) -> ruleWrite refexpr valexpr mem env
+    | (SequenceNode (left, right)) -> ruleSequence left right mem env
+    | (WhileNode (cond, body)) -> ruleWhile cond body mem env
+    | (RefNode expr) -> ruleReference expr mem env
 
-(* ========================================================*)
 and 
-(* ruleName : environment -> string -> valueType *)
-(* Fonction d'évaluation d'un identificateur *)
-ruleName env name = 
-  match (lookfor name env) with
-  | NotFound -> (ErrorValue (UnknownIdentError name))
-(* Si la valeur a été trouvé dans l'environnement, on retourne le type*)
-  | (Found value) -> match value with
-                    | (IntegerValue value) -> (IntegerValue value)
-                    | (BooleanValue value) -> (BooleanValue value)
-                    | _ -> (ErrorValue (TypeMismatchError)) 
+(* .............................................................................*)
+(*   ruleAccess : String -> memory -> environment                               *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
 
-(* ========================================================*)
+ruleAccess ident mem env = 
+  (match (lookforEnv ident env) with
+  | NotFound -> ((ErrorValue (UnknownIdentError ident)),mem)
+  | (Found (FrozenValue (fexpr,fenv))) -> (value_of_expr (fexpr,mem) fenv)
+  | (Found value) -> (value,mem))
+    
 and 
-(* ruleLet : environment -> string -> ast- > ast -> valueType *)
-(* Fonction d'évaluation d'un let *)
-(* "let ident = bvalue in bin" *)
-ruleLet env ident bvalue bin = 
-  (let value = (value_of_expr bvalue env) 
+(* .............................................................................*)
+(*  ruleLet : String -> Ast.ast -> Ast.ast -> memory -> environment             *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+ruleLet ident bvalue bin mem env = 
+  (let (vval,vmem) = 
+     (value_of_expr (bvalue,mem) env) 
    in
-   (match value with
-    | (ErrorValue _) as result -> result
-    | _ -> (value_of_expr bin ((ident , value)::env)))
-  )
-(* ========================================================*)
+     (match vval with
+     | (ErrorValue _) as result -> (result,vmem)
+     | _ -> (value_of_expr (bin,vmem) ((ident,vval)::env))))
+
 and 
-(* ruleBinary : environment -> binary -> ast- > ast -> valueType *)
-(* Fonction d'évaluation d'un opérateur binaire *)
-ruleBinary env op left right = 
-  let leftvalue = 
-    (value_of_expr left env) 
+(* .............................................................................*)
+(*   ruleBinary : binary -> Ast.ast -> Ast.Ast -> memory -> environment         *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+ruleBinary op left right mem env = 
+  let (rightvalue, rightmem) = 
+    (value_of_expr (right,mem) env) 
   in
-    (match leftvalue with
-    | (ErrorValue _) as result -> result
+    (match rightvalue with
+    | (ErrorValue _) as result -> (result, rightmem)
     | _ ->
-      (let rightvalue = 
-         (value_of_expr right env) 
-       in
-         (match rightvalue with
-         | (ErrorValue _) as result -> result
+      (let (leftvalue, leftmem) = (value_of_expr (left,rightmem) env) in
+         (match leftvalue with
+         | (ErrorValue _) as result -> (result, leftmem)
          | _ ->
            (match (leftvalue,rightvalue) with 
            | ((IntegerValue leftvalue), (IntegerValue rightvalue)) ->
              (match op with
-             | Equal -> (BooleanValue (leftvalue = rightvalue))
-             | Different -> (BooleanValue (leftvalue <> rightvalue))
-             | Lesser -> (BooleanValue (leftvalue < rightvalue))
-             | LesserEqual -> (BooleanValue (leftvalue <= rightvalue))
-             | Greater -> (BooleanValue (leftvalue > rightvalue))
-             | GreaterEqual -> (BooleanValue (leftvalue >= rightvalue))
-             | Add -> (IntegerValue (leftvalue + rightvalue))
-             | Substract -> (IntegerValue (leftvalue - rightvalue))
-             | Multiply -> (IntegerValue (leftvalue * rightvalue))
+             | Equal -> ((BooleanValue (leftvalue = rightvalue)), leftmem)
+             | Different -> ((BooleanValue (leftvalue <> rightvalue)), leftmem)
+             | Lesser -> ((BooleanValue (leftvalue < rightvalue)), leftmem)
+             | LesserEqual -> ((BooleanValue (leftvalue <= rightvalue)), leftmem)
+             | Greater -> ((BooleanValue (leftvalue > rightvalue)), leftmem)
+             | GreaterEqual -> ((BooleanValue (leftvalue >= rightvalue)), leftmem)
+             | Add -> ((IntegerValue (leftvalue + rightvalue)), leftmem)
+             | Substract -> ((IntegerValue (leftvalue - rightvalue)), leftmem)
+             | Multiply -> ((IntegerValue (leftvalue * rightvalue)), leftmem)
              | Divide -> 
-                 (if (rightvalue = 0) then 
-                    (ErrorValue RuntimeError)
-                  else 
-                    (IntegerValue (leftvalue / rightvalue)))
-             | _ -> (ErrorValue TypeMismatchError))
-             | ((BooleanValue leftvalue), (BooleanValue rightvalue)) -> 
-               (match op with
-                  | Or -> (BooleanValue (leftvalue || rightvalue))
-                  | And -> (BooleanValue (leftvalue && rightvalue))
-                  | _ -> (ErrorValue TypeMismatchError))
-             | _ -> (ErrorValue TypeMismatchError)))))
+               (if (rightvalue = 0) then 
+                  ((ErrorValue RuntimeError),leftmem)
+                else 
+                  ((IntegerValue (leftvalue / rightvalue)), leftmem))
+             | _ -> ((ErrorValue TypeMismatchError), leftmem))
+           | ((BooleanValue leftvalue), (BooleanValue rightvalue)) -> 
+             (match op with
+             | Or -> ((BooleanValue (leftvalue || rightvalue)),leftmem)
+             | And -> ((BooleanValue (leftvalue && rightvalue)) ,leftmem)
+             | _ -> ((ErrorValue TypeMismatchError), leftmem))
+          | _ -> ((ErrorValue TypeMismatchError), leftmem)))))
 
-(* ========================================================*)
 and 
-(* ruleUnary : environment -> unary -> ast- > valueType *)
-(* Fonction d'évaluation d'un opérateur unaire *)
-ruleUnary env op exp =
-  let value =  
-    (value_of_expr exp env) 
+(* .............................................................................*)
+(*   ruleUnary : unary -> Ast.ast -> memory -> environment                      *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+ruleUnary op expr mem env =
+  let (rvalue,rmem) =  
+    (value_of_expr (expr,mem) env) 
   in
-    match value with
-    | (ErrorValue _) as result -> result
+    (match rvalue with
+    | (ErrorValue _) as result -> (result,rmem)
     | (IntegerValue value) ->
       (match op with
-      | Negate -> (IntegerValue (- value)))
-    | _ -> (ErrorValue TypeMismatchError)
-
-(* ========================================================*)
-and
-(* ruleIf : environment -> ast -> ast -> ast- > valueType *)
-(* Fonction d'évaluation d'une conditionnelle *)
-(* "if cond then bthen else belse" *)
-ruleIf env cond bthen belse = 
-    match (value_of_expr cond env) with
-    |(BooleanValue cond) -> if cond then (value_of_expr bthen env)
-                            else (value_of_expr belse env)
-    |_ -> (ErrorValue TypeMismatchError)
-    
-(* ========================================================*)
-and 
-(* ruleFunction : ast -> environment -> valueType *)
-(* Fonction d'évaluation d'une fonction *)
-ruleFunction expr env = 
-    (FrozenValue (expr,env))
-
-(* Appel par nom *)
-(* ========================================================*)
-and
-(* ruleCallByName : environment -> ast -> ast -> valueType *)
-(* Fonction d'évaluation d'un appel de fonction avec passage de paramètre par nom*)
-ruleCallByName env fexpr pexpr = 
-      match (value_of_expr fexpr env) with
-      | (FrozenValue (fexpr,fenv)) ->
-        (match fexpr with
-        | (FunctionNode (fpar,fbody)) ->
-          (value_of_expr fbody ((fpar,(FrozenValue (pexpr,env)))::fenv))
-        | _ -> (ErrorValue TypeMismatchError))
-      | (ErrorValue _) as result -> result
-      | _ -> (ErrorValue TypeMismatchError)
-(* ========================================================*)
-and
-(* ruleCallByValue : environment -> ast -> ast -> valueType *)
-(* Fonction d'évaluation d'un appel de fonction avec passage de paramètre par valeur*)
-ruleCallByValue env fexpr pexpr = 
-(* Appel par valeur *)
-(* A traiter*)
-  let pval = 
-    value_of_expr pexpr env
-  in
-    match pval with
-    | (ErrorValue _) as result -> result
-    | _ -> 
-  let fval = 
-        value_of_expr fexpr env
-      in 
-        (match fval with
-        | (FrozenValue ((FunctionNode (fpar,fbody)),fenv)) ->
-            (value_of_expr fbody ((fpar,pval)::fenv))
-        | (ErrorValue _) as result -> result
-        | _ -> (ErrorValue TypeMismatchError)
+      | Negate ->
+        ((IntegerValue (- value)),rmem)
+      (*| _ -> ((ErrorValue TypeMismatchError),rmem) *)
         )
-(* ========================================================*)
-and
-(* ruleLetrec : environment -> string -> ast- > ast -> valueType *)
-(* Fonction d'évaluation d'un let rec*)
-(* "letrec ident = bvalue in bin" *)
-ruleLetrec env ident bvalue bin = 
-(* A traiter*)
-     (ErrorValue UndefinedExpressionError)
-(* ========================================================*)
-and
-(* ruleTrue : valueType *)
-(* Fonction d'évaluation de true *)
-ruleTrue = (BooleanValue true)
+    | _ -> ((ErrorValue TypeMismatchError),rmem))
 
-(* ========================================================*)
 and
-(* ruleFalse : valueType *)
-(* Fonction d'évaluation de false *)
-ruleFalse = (BooleanValue false)
+(* .............................................................................*)
+(*   ruleIf : Ast.ast -> Ast.ast -> Ast.ast -> memory -> environment            *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
 
-(* ========================================================*)
+ruleIf cond bthen belse mem env = 
+  (let (cval,cmem) = 
+     (value_of_expr (cond,mem) env) 
+   in
+     (match cval with
+     | (BooleanValue rcond) ->
+       (if (rcond) then 
+          (value_of_expr (bthen,cmem) env)
+       else 
+          (value_of_expr (belse,cmem) env))
+     | (ErrorValue _) as result -> (result,cmem)
+     | _ -> ((ErrorValue TypeMismatchError),cmem)))
+
 and 
-(* ruleInteger : int -> valueType *)
-(* Fonction d'évaluation d'un entier *)
-ruleInteger value = (IntegerValue value)
+(* .............................................................................*)
+(*   ruleFunction : Ast.ast -> memory -> environment                            *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
 
+ruleFunction expr mem env = 
+  ( (FrozenValue (expr,env)), mem)
+
+(* Appel par nom 
+and
+(* .............................................................................*)
+(*   ruleCallByName : Ast.ast -> Ast.ast -> memory -> environment               *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+ruleCallByName fexpr pexpr mem env = 
+  match (value_of_expr fexpr env) with
+  | (FrozenValue (fexpr,fenv)) ->
+    (match fexpr with
+    | (FunctionNode (fpar,fbody)) ->
+      (value_of_expr fbody ((fpar,(FrozenValue (pexpr,env)))::fenv))
+    | _ -> (ErrorValue TypeMismatchError))
+  | (ErrorValue _) as result -> result
+  | _ -> (ErrorValue TypeMismatchError)
+*)
+
+and
+(* .............................................................................*)
+(*  ruleCallByValue : Ast.ast -> Ast.ast -> memory -> environment               *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+(* Appel par valeur *)
+ruleCallByValue fexpr pexpr mem env = 
+  let (pval,pmem) = 
+     value_of_expr (pexpr,mem) env
+   in
+     match pval with
+     | (ErrorValue _) as result -> (result,pmem)
+     | _ -> 
+	let (fval,fmem) = 
+          value_of_expr (fexpr,pmem) env
+        in 
+         (match fval with
+         | (FrozenValue ((FunctionNode (fpar,fbody)),fenv)) ->
+             (value_of_expr (fbody,fmem) ((fpar,pval)::fenv))
+         | (ErrorValue _) as result -> (result,fmem)
+         | _ -> ((ErrorValue TypeMismatchError),fmem)
+         )
+    
+and
+(* .............................................................................*)
+(*  ruleLetrec : String -> Ast.ast -> Ast.ast -> memory -> environment          *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+ruleLetrec ident bvalue bin mem env = 
+  (value_of_expr (bin,mem) 
+      ((ident,(FrozenValue ((LetrecNode (ident,bvalue,bvalue)),env)))::env))
+
+and
+(* .............................................................................*)
+(*   ruleTrue  : memory -> (ValueType * memory)                                 *)
+(* .............................................................................*)
+
+ruleTrue mem = ((BooleanValue true), mem)
+
+and
+(* .............................................................................*)
+(*   ruleFalse : memory -> (ValueType * memory)                                 *)
+(* .............................................................................*)
+
+ruleFalse mem = ((BooleanValue false), mem)
+
+and
+(* .............................................................................*)
+(*   ruleUnit :  memory -> (ValueType * memory)                               ..*)
+(* .............................................................................*)
+
+ruleUnit mem = (NullValue , mem)
+
+and 
+(* .............................................................................*)
+(*   ruleAccess : String -> memory -> environment  -> (ValueType * memory) ..*)
+(* .............................................................................*)
+
+ruleInteger value mem = ((IntegerValue value), mem)
+
+and
+(* .............................................................................*)
+(*   ruleRead : Ast.ast -> memory -> environment                                *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+(* ...............A COMPLETER .......................................*)
+ruleRead expr mem env = let (v,m) =
+(value_of_expr (expr,mem) env) in
+    match v with 
+        |(ErrorValue _) as result -> (result,m)
+        | ReferenceValue ref  ->( match lookforMem ref m with
+                |NotFound -> ((ErrorValue (UnknownReferenceError ref)),mem)
+                |Found value -> (value,m)
+                |_->((ErrorValue TypeMismatchError),m))
+        | _ -> ((ErrorValue TypeMismatchError),mem)
+
+and
+(* .............................................................................*)
+(*   ruleWrite : Ast.ast -> Ast.ast -> memory -> environment                    *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+ruleWrite refexpr valexpr mem env = 
+let (v,m) = (value_of_expr(refexpr,mem) env ) in 
+  match v with 
+		|(ErrorValue _) as result -> (result,m)
+		|ReferenceValue ref -> (match lookforMem ref m with
+				|NotFound -> ((ErrorValue (UnknownReferenceError ref)),mem)
+				|Found value -> let (v2,m2) = (value_of_expr(valexpr,m) env ) in 
+					(match v2 with 	
+						|(ErrorValue _) as result -> (result,m2)
+						|_ -> (NullValue,(ref,v2)::m2)
+)
+)
+and
+(* .............................................................................*)
+(*   ruleSequence : Ast.ast -> Ast.ast -> memory -> environment                 *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+
+ruleSequence left right mem env = 
+let (v,m) = (value_of_expr (left,mem) env) in 
+  match v with 
+          |(ErrorValue _) as result -> (result,m)
+          | NullValue -> (value_of_expr (right,m) env)
+          | _ -> ((ErrorValue TypeMismatchError),mem)(* ...............A COMPLETER .......................................*)
+
+and
+(* .............................................................................*)
+(*   ruleWhile : Ast.ast -> Ast.ast -> memory -> environment                 *)
+(*      -> (ValueType * memory)                                                 *)
+(* .............................................................................*)
+ruleWhile cond body mem env = 
+
+   let (v,m) = (value_of_expr (cond,mem) env) in 
+      (match v with
+      |(BooleanValue value) -> if value then (value_of_expr (body,mem) env) else ((NullValue ),m)
+      |(ErrorValue _) as result -> (result,m)
+      | _ -> ((ErrorValue TypeMismatchError),mem) 
+      )
+and
+(* .............................................................................*)
+(*   ruleReference : Ast.ast -> memory -> environment                           *)
+(*       -> (ValueType * memory)                                                *)
+(* .............................................................................*)
+
+ruleReference expr mem env = 
+let (_val,memory) = (value_of_expr (expr,mem) env) in
+    (match _val with 
+      |(ErrorValue _) as result -> (result,memory)
+      | value -> (let _ref = newReference () in ((ReferenceValue _ref ),(_ref,value)::memory)))
+
+;;
